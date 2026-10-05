@@ -92,7 +92,7 @@ async function handleDeposit(log) {
     const payload = JSON.stringify({
       walletAddress: user,
       status: 'PENDING_ALPACA',
-      blockchain_tx: transactionHash
+      transactionHash: transactionHash
     });
     await redisClient.publish('transaction_updates', payload);
 
@@ -110,7 +110,8 @@ async function handleDeposit(log) {
       const payload = JSON.stringify({
         walletAddress: user,
         status: 'FAILED',
-        blockchain_tx: transactionHash
+        transactionHash: transactionHash,
+        reason: error.message || "Order rejected by Alpaca"
       });
       await redisClient.publish('transaction_updates', payload);
     } catch (dbError) {
@@ -151,7 +152,7 @@ async function handleMinted(log) {
       const payload = JSON.stringify({
         walletAddress: user,
         status: 'COMPLETED',
-        blockchain_tx: transactionHash
+        transactionHash: transactionHash
       });
       await redisClient.publish('transaction_updates', payload);
     } else {
@@ -201,7 +202,7 @@ async function handleRedeemRequested(log) {
     const payload = JSON.stringify({
       walletAddress: user,
       status: 'PENDING_ALPACA',
-      blockchain_tx: transactionHash
+      transactionHash: transactionHash
     });
     await redisClient.publish('transaction_updates', payload);
 
@@ -219,7 +220,8 @@ async function handleRedeemRequested(log) {
       const payload = JSON.stringify({
         walletAddress: user,
         status: 'FAILED',
-        blockchain_tx: transactionHash
+        transactionHash: transactionHash,
+        reason: error.message || "Order rejected by Alpaca"
       });
       await redisClient.publish('transaction_updates', payload);
     } catch (dbError) {
@@ -257,7 +259,7 @@ async function handleRedeem(log) {
       const payload = JSON.stringify({
         walletAddress: user,
         status: 'COMPLETED',
-        blockchain_tx: transactionHash
+        transactionHash: transactionHash
       });
       await redisClient.publish('transaction_updates', payload);
     }
@@ -289,7 +291,7 @@ async function handleMintCanceled(log) {
       );
       console.log(`✅ Marked Mint Transaction ${pendingTx.rows[0].id} as REFUNDED!`);
 
-      const payload = JSON.stringify({ walletAddress: user, status: 'REFUNDED', blockchain_tx: transactionHash });
+      const payload = JSON.stringify({ walletAddress: user, status: 'REFUNDED', transactionHash: transactionHash });
       await redisClient.publish('transaction_updates', payload);
     }
   } catch (error) {
@@ -319,7 +321,7 @@ async function handleRedeemCanceled(log) {
       );
       console.log(`✅ Marked Redeem Transaction ${pendingTx.rows[0].id} as REFUNDED!`);
 
-      const payload = JSON.stringify({ walletAddress: user, status: 'REFUNDED', blockchain_tx: transactionHash });
+      const payload = JSON.stringify({ walletAddress: user, status: 'REFUNDED', transactionHash: transactionHash });
       await redisClient.publish('transaction_updates', payload);
     }
   } catch (error) {
@@ -475,7 +477,8 @@ function setupAlpacaWebSocket() {
             const payload = JSON.stringify({
               walletAddress,
               status: failStatus,
-              transactionHash: client_order_id
+              transactionHash: client_order_id,
+              reason: `Order was ${event} by Alpaca`
             });
             await redisClient.publish('transaction_updates', payload);
           }

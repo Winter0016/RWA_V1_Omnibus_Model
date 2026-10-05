@@ -7,14 +7,15 @@ To provide a frictionless Web2-like experience, the project implements **Account
 ## The Problem
 The Real World Asset (RWA) movement aims to bridge traditional finance (TradFi) and Web3, but current solutions suffer from three major bottlenecks:
 1. **Siloed Capital & Lack of Composability:** In traditional finance, if you own Tesla stock, its value is trapped inside a broker. You cannot easily use it as collateral for a loan or stake it in a liquidity pool.
-2. **Global Access Friction:** Purchasing US equities from outside the US requires heavy KYC, wire transfers, and forex fees. 
+2. **Global Payment Friction:** Purchasing US equities from outside the US traditionally requires slow international wire transfers and expensive foreign exchange (Forex) fees. 
 3. **Web3 UX Onboarding:** Most decentralized platforms force users to manage private keys, bridge tokens, and pay volatile network gas fees in native ETH, which drives away retail users.
 
 ## The Solution
 **dTesla** solves these bottlenecks by bringing US equities on-chain with zero UX friction:
 - **Composability:** By tokenizing real TSLA shares into `dTSLA` on Arbitrum, users can now take their stock and plug it into the broader DeFi ecosystem (e.g., using it as collateral in lending protocols).
-- **Global Access & Instant Settlement:** Anyone globally with USDC can gain instant exposure to the US stock market, settling 24/7 on the blockchain instead of waiting T+2 days in TradFi.
-- **Zero Onboarding Friction:** Using Account Abstraction (Privy + Pimlico ERC-4337), users log in with an email, and a Smart Account pays their gas fees directly in USDC. The user never has to touch or bridge ETH. The underlying collateral (real TSLA shares) is automatically bought and sold in real-time via the Alpaca Trading API, guaranteeing strict 1:1 backing.
+- **Global Access & 24/7 On-Chain Trading:** By turning real TSLA shares into `dTSLA` on Arbitrum, anyone globally can buy it with USDC. Once you mint `dTSLA`, you can send or trade it 24/7 on the blockchain, completely skipping the slow waiting times of traditional finance.
+- **Easy Login:** Using Account Abstraction (Privy + Pimlico), users just log in with an email. A Smart Account pays their gas fees in USDC, so users never need to buy or touch ETH. The real TSLA stock is bought and sold automatically using the Alpaca API to keep a strict 1:1 backing.
+- **Architectural Decision (Price Discovery vs 24/7 Minting):** To guarantee perfect 1:1 collateral backing, dTesla uses a **Direct-to-Broker** model. While an off-chain "Internal Crossing Engine" could allow 24/7 minting by matching user buys and sells internally, it introduces a critical **Price Discovery** flaw. Without a live institutional data feed (SIP), an internal engine cannot guarantee the exact execution price, leading to arbitrage risk. By routing directly to Alpaca, we rely on the live stock market for precise execution prices. This ensures mathematical safety, even if it means restricting primary Minting/Redeeming to active US Market Hours.
 
 ---
 

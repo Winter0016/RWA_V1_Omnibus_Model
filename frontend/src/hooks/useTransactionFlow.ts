@@ -60,6 +60,9 @@ export function useTransactionFlow() {
           await resumeRedeem(wsData.transactionHash);
         }, 3000);
       } else if (wsData.status === 'FAILED' || wsData.status === 'CANCELED_BY_ADMIN') {
+        if (wsData.reason) {
+          alert(`Trade Rejected by Broker: ${wsData.reason}\n\nInitiating automatic on-chain refund...`);
+        }
         setTimeout(async () => {
           await resumeRefund(wsData.transactionHash);
         }, 3000);

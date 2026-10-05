@@ -499,7 +499,7 @@ const resolvers = {
       const payload = JSON.stringify({
         walletAddress: tx.wallet_address,
         status: 'CANCELED_BY_USER',
-        blockchain_tx: transactionHash
+        transactionHash: transactionHash
       });
       await redisClient.publish('transaction_updates', payload);
 

@@ -181,8 +181,40 @@ The protocol operates using a distributed backend architecture (splitting the Gr
         └───────────────────────────────────────────────────┘
 ```
 
+### 3. The Wash Trade Edge Case (Omnibus Model)
 
-### 3. Theoretical V2 Architecture (Internal Crossing Engine)
+Because dTesla uses a single Master 'Omnibus' account for all users, opposing orders placed while the market is closed are caught in the broker's pending queue, triggering a regulatory "Wash Trade" rejection. Our protocol automatically catches this and refunds the user.
+
+```text
+ User A (Mints dTSLA)          User B (Redeems dTSLA)
+         │                                │
+         │ (Market Closed)                │ (Market Closed)
+         ▼                                ▼
+ +------------------------------------------------+
+ |             ALPACA PENDING QUEUE               |
+ |                                                |
+ |   [ Buy 1 TSLA ]          [ Sell 1 TSLA ]      |
+ +------------------------------------------------+
+                           │
+                           ▼
+          [ ❌ REJECTED: FINRA WASH TRADE ]
+          Broker compliance flags the Master Account 
+          for trying to buy and sell simultaneously.
+                           │
+                           ▼
+ +------------------------------------------------+
+ |              dTESLA BACKEND (INDEXER)          |
+ |  1. Catches HTTP 403 Forbidden Error           |
+ |  2. Broadcasts "FAILED" via Redis Pub/Sub      |
+ +------------------------------------------------+
+                           │
+                           ▼
+                 [ 💰 AUTOMATED REFUND ]
+          Frontend prompts User A to sign for a 
+          gasless USDC refund on-chain.
+```
+
+### 4. Theoretical V2 Architecture (Internal Crossing Engine)
 
 To unlock 24/7 Minting and eliminate Wash Trade rules, a V2 architecture would introduce an off-chain Internal Crossing Engine. However, this is currently **BLOCKED** by the Price Discovery problem.
 

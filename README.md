@@ -343,7 +343,7 @@ if (!acquired) throw new Error("Transaction is already being processed.");
 await redisClient.expire(lockKey, 10);
 ```
 
-### 4. Broker Buying Power Desync (Optimistic Saga Pattern)
+### 4. Race Condition: Broker Buying Power Overdraft (Atomic Check-and-Reserve)
 **The Problem:** If 100 users simultaneously click "Mint", the backend could query Alpaca's available buying power, see $1,000 available, and approve all 100 transactions, causing massive overdrafts and failed broker executions.
 **The Solution:** We built an atomic **Check-and-Reserve** pattern using Redis `incrByFloat`. It atomically reserves the fiat in a global pool and rolls back if it exceeds real buying power. We also built a distributed Saga with a 5-minute TTL that automatically releases the reserved fiat if the blockchain transaction drops. The background worker consumes this reservation upon success.
 **Evidence (Cross-Service Synchronization):**

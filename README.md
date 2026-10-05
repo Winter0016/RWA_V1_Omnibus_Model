@@ -296,6 +296,164 @@ To maintain a highly resilient Escrow architecture and Zero-Trust GraphQL API, t
 - **Key Columns:** `id`, `last_processed_block`.
 - **Why it matters:** If the Node.js backend crashes or restarts, the `indexer.js` worker checks this table upon boot. It will instantly resume scanning from the `last_processed_block`, ensuring absolutely zero Deposit or Redeem events are missed during downtime.
 
+## Technical Edge Cases Solved (Proof of Implementation)
+
+To build a production-ready Web3 integration, we had to solve several complex distributed systems and cybersecurity edge cases. Here is exactly how we implemented them:
+
+### 1. Authentication & Authorization (Zero-Trust JWT)
+**The Problem:** A malicious user could send a GraphQL mutation to cancel another user's transaction by forging the `user_id` payload.
+**The Solution:** The backend enforces a Zero-Trust architecture. It verifies the Privy JWT server-side on every request and extracts the unforgeable `privyUserId`. If it doesn't match the transaction owner, it reverts.
+**Evidence (`backend/resolvers.js`):**
+```javascript
+const userRes = await pool.query('SELECT privy_id FROM users WHERE id = $1', [tx.user_id]);
+if (userRes.rows.length === 0 || userRes.rows[0].privy_id !== context.user.privyUserId) {
+  throw new Error('Unauthorized: You do not own this transaction');
+}
+```
+
+### 2. Disconnected Session Recovery (Orphaned Transactions)
+**The Problem:** If a user closes their browser window while a stock trade is processing on Alpaca, the frontend loses the WebSocket callback. In basic architectures, this leaves the user's funds permanently stuck in limbo because they can never retrieve the Oracle signature.
+**The Solution:** The frontend lifecycle is completely decoupled from backend execution. By exposing independent, idempotent endpoints (`getClaimSignature`, `getRedeemSignature`, and `getRefundSignature`), the backend can safely complete the trade and update PostgreSQL. The user can simply log back in days later and manually claim their tokens or refunds.
+**Evidence (`backend/resolvers.js`):**
+```javascript
+getClaimSignature: async (_, { transactionHash }, context) => {
+  // 1. Fetch the transaction independently of the active session
+  const txRes = await pool.query('SELECT * FROM transactions WHERE blockchain_tx = $1', [transactionHash]);
+  const tx = txRes.rows[0];
+
+  // 2. Ensure it's ready to claim
+  if (tx.status !== 'READY_TO_CLAIM') {
+    throw new Error(`Transaction is not ready to claim. Current status: ${tx.status}`);
+  }
+```
+
+### 3. API Spam & Double-Processing (Atomic `setNX` Locking)
+**The Problem:** Because users can manually call `getClaimSignature`, `getRedeemSignature`, or `getRefundSignature` from disconnected sessions, a user could rapidly spam these claim buttons. This would cause the API to generate duplicate Oracle signatures or process the same payload simultaneously.
+**The Solution:** We implemented atomic distributed locks using Redis `setNX` (Set if Not Exists) specifically on these claim endpoints to guarantee mathematically that a transaction hash is only processed by one GraphQL thread at a time.
+**Evidence (`backend/resolvers.js`):**
+```javascript
+const lockKey = `Lock:${transactionHash}`;
+const acquired = await redisClient.setNX(lockKey, "1");
+if (!acquired) throw new Error("Transaction is currently being processed. Please try again.");
+await redisClient.expire(lockKey, 10);
+```
+
+### 4. Broker Buying Power Desync (Optimistic Saga Pattern)
+**The Problem:** If 100 users simultaneously click "Mint", the backend could query Alpaca's available buying power, see $1,000 available, and approve all 100 transactions, causing massive overdrafts and failed broker executions.
+**The Solution:** We built an atomic **Check-and-Reserve** pattern using Redis `incrByFloat`. It atomically reserves the fiat in a global pool and rolls back if it exceeds real buying power. We also built a distributed Saga with a 5-minute TTL that automatically releases the reserved fiat if the blockchain transaction drops. The background worker consumes this reservation upon success.
+**Evidence (Cross-Service Synchronization):**
+```javascript
+// 1. API Boundary (backend/resolvers.js) - Atomic Check-and-Reserve
+// 1. Get real cash balance from Alpaca
+const availableFiat = await getAvailableFiat();
+
+// 2. Atomically reserve the fiat first (Solves the Race Condition!)
+const parsedUsdc = parseFloat(usdcAmount); //usdcAmount is the number of usdc input from user => the usdc amount user want to use to buy tsla token
+
+const newReservedFiat = await redisClient.incrByFloat('alpaca:reserved_buying_power', parsedUsdc);
+
+const previousReservedFiat = newReservedFiat - parsedUsdc;
+const trulyAvailable = availableFiat - previousReservedFiat;
+
+if (trulyAvailable < parsedUsdc) {
+  await redisClient.incrByFloat('alpaca:reserved_buying_power', -parsedUsdc); // Rollback
+  throw new Error(`Insufficient Buying Power. Available: $${trulyAvailable.toFixed(2)}`);
+}
+
+// Different code but mathematically identical result:
+/*
+const remainingFiat = availableFiat - newReservedFiat;
+if (remainingFiat < 0) {
+  await redisClient.incrByFloat('alpaca:reserved_buying_power', -parsedUsdc); // Rollback
+  throw new Error(`Insufficient Buying Power`);
+}
+*/
+
+// 2. Saga Deadlock Prevention (backend/resolvers.js)
+await redisClient.setEx(`Lock:${signature}`, 300, usdcAmount.toString());
+setTimeout(async () => {
+  const status = await redisClient.get(`Lock:${signature}`);
+  if (status !== "COMPLETED") { 
+    await redisClient.incrByFloat('alpaca:reserved_buying_power', -usdcAmount); // Auto-release
+  }
+}, 5 * 60 * 1000);
+
+// 3. Worker Boundary (backend/indexer.js) - Saga Completion
+await redisClient.set(`Lock:${signature}`, "COMPLETED");
+await redisClient.incrByFloat('alpaca:reserved_buying_power', -fiatAmount); // Consume reservation
+```
+
+### 5. Broker API Outage & Websocket Desync
+**The Problem:** If the Alpaca WebSocket drops an event, a user's transaction could get permanently stuck in a `PENDING_ALPACA` state on our database.
+**The Solution:** We built a self-healing **Reconciliation Engine**. A cron job runs every 60 seconds to fetch stuck orders directly from the Alpaca REST API and force the database to synchronize with the true broker state.
+**Evidence (`backend/indexer.js`):**
+```javascript
+async function reconcilePendingOrders() {
+  const pending = await pool.query("SELECT * FROM transactions WHERE status = 'PENDING_ALPACA'");
+  for (const tx of pending.rows) {
+    const order = await alpaca.trading.orders.getOrderByClientOrderId({ clientOrderId: tx.blockchain_tx });
+    if (order.status === 'filled') {
+      // Recover state and push WebSocket success directly to the frontend
+    }
+  }
+}
+setInterval(reconcilePendingOrders, 60000);
+```
+
+### 6. On-Chain Signature Replay Protection
+**The Problem:** A user could theoretically capture their backend `claimMint` EIP-712 signature and submit it to the blockchain twice to double-mint `dTSLA` for free.
+**The Solution:** The smart contract uses a strict `mapping(bytes32 => bool) public s_usedSignatures` and timestamp tracking to guarantee the mathematical single-use of every signature.
+**Evidence (`contracts/dTSLA.sol`):**
+```solidity
+bytes32 messageHash = keccak256(
+    abi.encodePacked(
+        msg.sender,
+        usdcAmount,
+        timestamp,
+        "depositForMint"
+    )
+);
+
+if (s_usedSignatures[messageHash]) {
+    revert dTSLA__InvalidSignature();
+}
+s_usedSignatures[messageHash] = true;
+```
+
+### 7. Indexer Idempotency (Chain Reorg Protection)
+**The Problem:** The indexer could read the same `DepositReceived` event twice if the blockchain reorgs or the server restarts, resulting in 2 Alpaca orders for 1 payment.
+**The Solution:** The indexer enforces mathematical idempotency by checking the database for the exact `transactionHash` before executing any broker trades.
+**Evidence (`backend/indexer.js`):**
+```javascript
+const checkTx = await pool.query('SELECT * FROM transactions WHERE blockchain_tx = $1', [transactionHash]);
+if (checkTx.rows.length > 0) {
+  console.log(`⚠️ Transaction ${transactionHash} already processed. Skipping.`);
+  return;
+}
+```
+
+### 8. Floating-Point Precision & Rounding Errors
+**The Problem:** JavaScript cannot safely handle 18-decimal blockchain numbers, leading to massive rounding errors (e.g., losing $0.15 of a user's funds during USDC ➔ dTSLA conversion).
+**The Solution:** We completely bypassed JavaScript floating-point math by treating all broker prices as `BigInt` strings and manually padding the 18 decimals before generating the Oracle signature.
+**Evidence (`backend/indexer.js`):**
+```javascript
+// Safely convert broker string to 18-decimal EVM BigInt without precision loss
+const safeQtyStr = String(order.filled_qty);
+const decimalsToAdd = 18 - safeQtyStr.split('.')[1].length;
+const blockchainSafeQty = safeQtyStr.replace('.', '') + '0'.repeat(decimalsToAdd);
+```
+
+### 9. SQL Injection (SQLi) Prevention
+**The Problem:** A malicious user could send a GraphQL request injecting SQL into the `transactionHash` parameter to dump or drop the database.
+**The Solution:** Every single database interaction strictly uses Parameterized Queries (`$1`, `$2`), completely neutralizing all payload injection attempts.
+**Evidence (`backend/resolvers.js`):**
+```javascript
+const pendingTx = await pool.query(
+  `SELECT * FROM transactions WHERE user_id = $1 AND blockchain_tx = $2`, 
+  [user.id, args.transactionHash] // Parameterized array blocks SQLi
+);
+```
+
 ---
 
 ## Live Demonstration

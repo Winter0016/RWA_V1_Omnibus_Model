@@ -181,6 +181,35 @@ The protocol operates using a distributed backend architecture (splitting the Gr
         └───────────────────────────────────────────────────┘
 ```
 
+
+### 3. Theoretical V2 Architecture (Internal Crossing Engine)
+
+To unlock 24/7 Minting and eliminate Wash Trade rules, a V2 architecture would introduce an off-chain Internal Crossing Engine. However, this is currently **BLOCKED** by the Price Discovery problem.
+
+```text
+ User A (Sells 3 TSLA)          User B (Buys 5 TSLA)
+         │                                │
+         ▼                                ▼
+ +------------------------------------------------+
+ |              REDIS CROSSING ENGINE             |
+ |                                                |
+ |  1. Matches 3 TSLA internally                  |
+ |  2. Swaps User A's dTSLA for User B's USDC     |
+ +------------------------------------------------+
+         │                                │
+         │ 3. Net Delta (Buy 2 TSLA)      │ 4. Internal Pricing
+         ▼                                ▼
+ +---------------+               +-----------------+
+ |  Alpaca API   |               |   Price Feed    |
+ +---------------+               +-----------------+
+                                          │
+                          [ ❌ BLOCKED BY PRICE DISCOVERY ]
+                          Without a live institutional data feed (SIP),
+                          the internal engine cannot guarantee the 
+                          exact execution price of the matched 3 TSLA,
+                          creating an unacceptable arbitrage risk.
+```
+
 ---
 
 ## The Tech Stack

@@ -327,14 +327,19 @@ getClaimSignature: async (_, { transactionHash }, context) => {
   }
 ```
 
-### 3. API Spam & Double-Processing (Atomic `setNX` Locking)
-**The Problem:** Because users can manually call `getClaimSignature`, `getRedeemSignature`, or `getRefundSignature` from disconnected sessions, a user could rapidly spam these claim buttons. This would cause the API to generate duplicate Oracle signatures or process the same payload simultaneously.
-**The Solution:** We implemented atomic distributed locks using Redis `setNX` (Set if Not Exists) specifically on these claim endpoints to guarantee mathematically that a transaction hash is only processed by one GraphQL thread at a time.
+### 3. API Spam & Double-Processing (TOCTOU & Atomic Locking)
+**The Problem:** Because users can manually call `getClaimSignature`, `getRedeemSignature`, or `getRefundSignature` from disconnected sessions, a user could rapidly spam these claim buttons. This introduces a **TOCTOU (Time-Of-Check to Time-Of-Use)** vulnerability: if 10 requests hit the API at the exact same millisecond, all 10 would check the cache simultaneously, see that no signature exists, and proceed to generate duplicate Oracle signatures with conflicting timestamps.
+**The Solution:** We implemented a two-step idempotency lock. First, we check Redis for a cached signature to prevent generating new signatures for old transactions. Second, we apply an atomic distributed lock using Redis `setNX` (Set if Not Exists) to mathematically guarantee that even if 10 threads bypass the cache check at the exact same millisecond, only one thread can actually execute the generation logic.
 **Evidence (`backend/resolvers.js`):**
 ```javascript
+// 1. Check cache first (Handles idempotency over time)
+const cachedSig = await redisClient.get(`ClaimSig:${transactionHash}`);
+if (cachedSig) return JSON.parse(cachedSig);
+
+// 2. Atomic lock prevents TOCTOU concurrency (Handles simultaneous spam)
 const lockKey = `Lock:${transactionHash}`;
 const acquired = await redisClient.setNX(lockKey, "1");
-if (!acquired) throw new Error("Transaction is currently being processed. Please try again.");
+if (!acquired) throw new Error("Transaction is already being processed.");
 await redisClient.expire(lockKey, 10);
 ```
 

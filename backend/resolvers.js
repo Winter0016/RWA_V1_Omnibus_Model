@@ -60,7 +60,7 @@ const resolvers = {
 
       const lockKey = `Lock:${transactionHash}`;
       const acquired = await redisClient.setNX(lockKey, "1");
-      if (!acquired) throw new Error("Transaction is currently being processed. Please try again.");
+      if (!acquired) throw new Error("Transaction is already being processed.");
       await redisClient.expire(lockKey, 10);
 
       try {
@@ -130,7 +130,7 @@ const resolvers = {
 
       const lockKey = `Lock:${transactionHash}`;
       const acquired = await redisClient.setNX(lockKey, "1");
-      if (!acquired) throw new Error("Transaction is currently being processed. Please try again.");
+      if (!acquired) throw new Error("Transaction is already being processed.");
       await redisClient.expire(lockKey, 10);
 
       try {
@@ -189,7 +189,7 @@ const resolvers = {
 
       const lockKey = `Lock:${transactionHash}`;
       const acquired = await redisClient.setNX(lockKey, "1");
-      if (!acquired) throw new Error("Transaction is currently being processed. Please try again.");
+      if (!acquired) throw new Error("Transaction is already being processed.");
       await redisClient.expire(lockKey, 10);
 
       try {
@@ -510,7 +510,7 @@ const resolvers = {
 
       const lockKey = `Lock:${transactionHash}`;
       const acquired = await redisClient.setNX(lockKey, "1");
-      if (!acquired) throw new Error("Transaction is currently being processed. Please try again.");
+      if (!acquired) throw new Error("Transaction is already being processed.");
       await redisClient.expire(lockKey, 10);
 
       try {

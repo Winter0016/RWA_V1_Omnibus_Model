@@ -1,5 +1,15 @@
 # dTesla: Web3 Real World Assets (RWA)
 
+🎥 **Video Demonstration:** [Watch on YouTube](https://youtu.be/mZUmlqTZ_3Y)
+
+**The video covers:**
+- Zero-Friction User Onboarding (Privy Email Login)
+- Gasless ERC-4337 USDC Transactions (Pimlico Paymaster)
+- Live WebSocket Updates from the Backend
+- The Two-Step Escrow Mint & Redeem Flow
+- System-Level Revert and Refund Fallbacks (when the stock market is closed)
+- Advanced System Architecture Testing (API Spam, Distributed Locks, and Race Conditions)
+
 **dTesla** is a Real World Asset (RWA) project that tokenizes Tesla stock on-chain. It natively integrates with the **Alpaca Trading Platform** as a third-party brokerage to programmatically purchase and hold real-world Tesla shares, ensuring every `dTSLA` token minted on the blockchain is backed 1:1 by actual stock.
 
 To provide a frictionless Web2-like experience, the project implements **Account Abstraction (ERC-4337)**. Users can simply log in using their Email or Google account via **Privy**, which automatically generates a secure embedded wallet for them. We then route their transactions through **Pimlico's Paymaster infrastructure**, allowing the smart account to interact on-chain and pay for gas fees directly in USDC, completely removing the need for users to hold native ETH.

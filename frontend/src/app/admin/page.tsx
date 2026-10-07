@@ -23,6 +23,34 @@ const truncateDecimals = (val: number | string, decimals: number = 6) => {
   return str === '' ? '0' : str;
 };
 
+const CopyAddress = ({ address }: { address: string }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex items-center space-x-2 inline-flex">
+      <span>{address.slice(0, 6)}...{address.slice(-4)}</span>
+      <button 
+        onClick={handleCopy}
+        className="text-zinc-500 hover:text-white transition-colors"
+        title="Copy Address"
+      >
+        {copied ? (
+          <span className="text-emerald-400 text-xs font-bold">✓</span>
+        ) : (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        )}
+      </button>
+    </div>
+  );
+};
+
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'contracts'>('users');
   const [whitelisting, setWhitelisting] = useState<string | null>(null);
@@ -103,7 +131,7 @@ export default function AdminPage() {
     fetchChainMetrics();
   }, []);
 
-  const { sendTransaction } = usePrivy();
+  const { sendTransaction, ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
 
   const executeWhitelist = async (targetAddress: string, status: boolean, isContract: boolean = false, name: string = '') => {
@@ -293,7 +321,11 @@ export default function AdminPage() {
     setAddingContract(false);
   };
 
-  if (usersError?.message === 'UNAUTHORIZED' || txError?.message === 'UNAUTHORIZED') {
+  if (!ready) {
+    return <div className="min-h-screen bg-black flex items-center justify-center p-4 pt-24 text-zinc-500">Loading...</div>;
+  }
+
+  if (!authenticated || usersError?.message === 'UNAUTHORIZED' || txError?.message === 'UNAUTHORIZED') {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-4 pt-24">
         <div className="bg-red-950/30 border border-red-900 rounded-2xl p-8 max-w-md w-full text-center">
@@ -455,10 +487,10 @@ export default function AdminPage() {
                           <div className="text-xs text-zinc-500">{u.email || 'No email'}</div>
                         </td>
                         <td className="px-6 py-4 font-mono text-sm text-zinc-300">
-                          {u.signer_address ? `${u.signer_address.slice(0, 6)}...${u.signer_address.slice(-4)}` : '-'}
+                          {u.signer_address ? <CopyAddress address={u.signer_address} /> : '-'}
                         </td>
                         <td className="px-6 py-4 font-mono text-sm text-zinc-300">
-                          {u.wallet_address ? `${u.wallet_address.slice(0, 6)}...${u.wallet_address.slice(-4)}` : 'Pending...'}
+                          {u.wallet_address ? <CopyAddress address={u.wallet_address} /> : 'Pending...'}
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${u.role === 'admin' ? 'bg-purple-500/20 text-purple-400' : 'bg-zinc-800 text-zinc-400'
@@ -524,7 +556,7 @@ export default function AdminPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 font-mono text-sm text-zinc-300">
-                          {tx.wallet_address ? `${tx.wallet_address.slice(0, 6)}...${tx.wallet_address.slice(-4)}` : 'Unknown'}
+                          {tx.wallet_address ? <CopyAddress address={tx.wallet_address} /> : 'Unknown'}
                         </td>
                         <td className="px-6 py-4 font-mono text-white">${tx.usdc_amount ? truncateDecimals(tx.usdc_amount) : '-'}</td>
                         <td className="px-6 py-4 font-mono text-zinc-300">
@@ -604,7 +636,7 @@ export default function AdminPage() {
                         <tr key={c.id} className="hover:bg-zinc-800/20 transition-colors">
                           <td className="px-6 py-4 font-medium text-white">{c.name}</td>
                           <td className="px-6 py-4 font-mono text-sm text-zinc-300">
-                            {c.contract_address}
+                            <CopyAddress address={c.contract_address} />
                           </td>
                           <td className="px-6 py-4">
                             <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${c.is_whitelisted ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
@@ -661,7 +693,8 @@ export default function AdminPage() {
 
             <h2 className="text-xl font-semibold text-white mb-2">Manage Whitelist</h2>
             <p className="text-slate-400 text-sm mb-6">
-              Update whitelist status for <strong>{whitelistModal.name}</strong> ({whitelistModal.targetAddress.slice(0, 6)}...{whitelistModal.targetAddress.slice(-4)}).
+              Update whitelist status for <strong>{whitelistModal.name}</strong> 
+              <span className="ml-2 inline-block"><CopyAddress address={whitelistModal.targetAddress} /></span>.
             </p>
 
             <div className="flex gap-4">

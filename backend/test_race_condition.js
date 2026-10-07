@@ -1,10 +1,11 @@
-const jwt = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkRpY0ZINDlxdXh4MFcyTE5kTl8tTU1YMElKQ2lOd20zRzQ4dTdLeFU5OEEifQ.eyJzaWQiOiJjbXVqdmp1d2UwMDZuMGNsODFicWo2OG9qIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3OTA1Nzc5NDQsImF1ZCI6ImNtdTZtYXF1bDAwMmkwY2pwc3FiYzF4eGEiLCJzdWIiOiJkaWQ6cHJpdnk6Y211NnZlYjh6MDBvbTBjbDVtNDk3ZmJ3dCIsImV4cCI6MTc5MDU4MTU0NH0.UFm20UWrO340MrQvVxRQvVxx22AdciOtemMmJvyV7MqJNSnDxF7FVE4_GfrZGZJ_HICOJlVHLZ9m2P2qN2DX7g"; // You need to grab your JWT from the browser network tab
+const jwt = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkRpY0ZINDlxdXh4MFcyTE5kTl8tTU1YMElKQ2lOd20zRzQ4dTdLeFU5OEEifQ.eyJzaWQiOiJjbXV3Y3M5ZHIwMG8xMGNsYTExOGg3ZnRuIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3OTEyODE4MDIsImF1ZCI6ImNtdTZtYXF1bDAwMmkwY2pwc3FiYzF4eGEiLCJzdWIiOiJkaWQ6cHJpdnk6Y211cXE4ZGF3MDNtdTBlampubGpwMWlpaCIsImV4cCI6MTc5MTI4NTQwMn0.uxn1Sv0RXtmBNWXKS7yw7mkiNPSoI2w3-MGeh829dzI6KCvhsttt0X7Qfjja_n0e6LcOhhemB5mLlpY39Y4tAw"; // You need to grab your JWT from the browser network tab
 
 const ENDPOINT = "http://localhost:4000/graphql";
-const WALLET = "0x48002b5E034C50282ed0876968f63c93B625449c"; // Put your actual wallet address here
+const WALLET = "0xff20C6091527aA33ADa5dB48E9d7DC6C575C78FA"; // Put your actual wallet address here
 
+//this function will check fund and then return signature if passed
 const query = `
-  mutation ReserveMintPower($usdcAmount: Float!, $walletAddress: String!) {
+  mutation ReserveMintPower($usdcAmount: String!, $walletAddress: String!) {
     reserveMintPower(usdcAmount: $usdcAmount, wallet_address: $walletAddress) {
       timestamp
       signature
@@ -12,9 +13,9 @@ const query = `
   }
 `;
 
-const fireMutation = async (amount, id) => {
+const fireMutation = async (amountString, id) => {
   try {
-    console.log(`[Req ${id}] Firing request to reserve $${amount}...`);
+    console.log(`[Req ${id}] Firing request to reserve $${amountString}...`);
     const response = await fetch(ENDPOINT, {
       method: 'POST',
       headers: {
@@ -24,7 +25,7 @@ const fireMutation = async (amount, id) => {
       body: JSON.stringify({
         query,
         variables: {
-          usdcAmount: amount,
+          usdcAmount: amountString,
           walletAddress: WALLET
         }
       })
@@ -42,14 +43,19 @@ const fireMutation = async (amount, id) => {
 };
 
 async function testRaceCondition() {
-  console.log("🚀 Launching 20 simultaneous requests to test the Redis lock...");
+  console.log("🚀 Launching 3 simultaneous requests to test the Redis Check-and-Reserve lock...");
 
-  // Create an array of 20 identical requests trying to reserve $25,000 each.
-  // 20 * $25,000 = $500,000. Since your Alpaca buying power is ~$400k,
-  // the first ~16 will succeed, and the last ~4 MUST instantly fail!
+  // You have $99,813.20 in Alpaca buying power.
+  // We fire 3 concurrent requests for $40,000 each.
+  // Total attempted: $120,000.
+  // 1st request ($40,000) -> Succeeds (Available: $59,813.20)
+  // 2nd request ($40,000) -> Succeeds (Available: $19,813.20)
+  // 3rd request ($40,000) -> FAILS! (Available: $19,813.20 < $40,000)
+
   const requests = [];
-  for (let i = 1; i <= 20; i++) {
-    requests.push(fireMutation(25000.0, i)); // Request $25,000 each!
+  for (let i = 1; i <= 3; i++) {
+    // Note: The GraphQL schema expects usdcAmount as a String, so we pass "40000"
+    requests.push(fireMutation("40000", i));
   }
 
   // Promise.all fires them concurrently at the exact same millisecond

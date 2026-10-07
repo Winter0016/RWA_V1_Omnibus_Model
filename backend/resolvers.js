@@ -333,7 +333,7 @@ const resolvers = {
       // 2. Atomically reserve the fiat first (Solves the Race Condition!)
       const parsedUsdc = parseFloat(usdcAmount);
       const newReservedFiat = await redisClient.incrByFloat('alpaca:reserved_buying_power', parsedUsdc);
-      
+
       const previousReservedFiat = newReservedFiat - parsedUsdc;
       const trulyAvailable = availableFiat - previousReservedFiat;
 
@@ -372,7 +372,7 @@ const resolvers = {
         const status = await redisClient.get(`Lock:${signature}`);
         if (status !== "COMPLETED") { // If it timed out or is still PENDING...
           await redisClient.incrByFloat('alpaca:reserved_buying_power', -usdcAmount);
-          console.log(`🔓 5-Min Timeout: Released $${usdcAmount} back to global pool.`);
+          console.log(`🔓 3-Min Timeout: Released $${usdcAmount} back to global pool.`);
         }
         await redisClient.del(`Lock:${signature}`); // Clean up
       }, 5 * 60 * 1000);

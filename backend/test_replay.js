@@ -1,17 +1,15 @@
-
 const GRAPHQL_URL = 'http://localhost:4000/graphql';
 
-// Replace with a valid blockchain_tx in your database that is in CANCELED_BY_USER or FAILED status
-const TEST_TX_HASH = '0xcbc05ccb7b94ea6e63a36cf6eb5aa6c4b0c5f2aa9b7c8d72eb5c6477d997ea83';
+// 1. Put your transaction hash here (Must be in READY_TO_CLAIM status!)
+const TEST_TX_HASH = '0xaad7ede3ab486b7a6eea24d5a7631d23dc85be2c6c38342d66d5fc2404ef5d99';
 
-// The Privy JWT Token from the frontend (requires a valid user)
-// You can get this from the 'Authorization' header of any GraphQL request in your browser's Network tab.
-const TEST_TOKEN = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkRpY0ZINDlxdXh4MFcyTE5kTl8tTU1YMElKQ2lOd20zRzQ4dTdLeFU5OEEifQ.eyJzaWQiOiJjbXVtaWszODIwM24zMGNrdzltaGNreXd4IiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3OTA2NzY1MDYsImF1ZCI6ImNtdTZtYXF1bDAwMmkwY2pwc3FiYzF4eGEiLCJzdWIiOiJkaWQ6cHJpdnk6Y211ODgzM28xMDNmOTBkbDgzN2dtMjc5ZCIsImV4cCI6MTc5MDY4MDEwNn0.bJKRkwI3nAZuQm9QfPw-zT5jEA484YHl0-0YyMUKzZj-iCvtG5K_jiESgHpSGBw9hyYrygezN5UOZ6uEVWadPw';
+// 2. Put your fresh JWT token here
+const TEST_TOKEN = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkRpY0ZINDlxdXh4MFcyTE5kTl8tTU1YMElKQ2lOd20zRzQ4dTdLeFU5OEEifQ.eyJzaWQiOiJjbXV3cndpbmUwMjlhMGNqcTVrdWw0bHdlIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3OTEzMDA1NzIsImF1ZCI6ImNtdTZtYXF1bDAwMmkwY2pwc3FiYzF4eGEiLCJzdWIiOiJkaWQ6cHJpdnk6Y211NnZlYjh6MDBvbTBjbDVtNDk3ZmJ3dCIsImV4cCI6MTc5MTMwNDE3Mn0.LNXR-ZJBZ5M9XYvVZdaoll8mWrGeZzQ_DEN003FHQE6MKBbqqmqAEoxJTUktw5s0Nn993My2pYah8Pz-ViUT3w';
 
-async function testReplayAttack() {
+async function testSpamAttack() {
   const query = `
-    query GetRefundSignature($transactionHash: String!) {
-      getRefundSignature(transactionHash: $transactionHash) {
+    query GetClaimSignature($transactionHash: String!) {
+      getClaimSignature(transactionHash: $transactionHash) {
         signature
       }
     }
@@ -19,10 +17,10 @@ async function testReplayAttack() {
 
   const variables = { transactionHash: TEST_TX_HASH };
 
-  console.log(`Firing 5 concurrent requests for tx: ${TEST_TX_HASH}...`);
+  console.log(`🚀 Firing 10 concurrent requests for tx: ${TEST_TX_HASH}...`);
 
   const promises = [];
-  for (let i = 0; i < 5; i++) {
+  for (let i = 1; i <= 10; i++) {
     promises.push(
       fetch(GRAPHQL_URL, {
         method: 'POST',
@@ -31,35 +29,43 @@ async function testReplayAttack() {
           'Authorization': `Bearer ${TEST_TOKEN}`
         },
         body: JSON.stringify({ query, variables })
-      }).then(res => res.json()).catch(err => ({ error: err.message }))
+      }).then(res => res.json()).then(data => ({ id: i, data }))
     );
   }
 
+  // Fire them all at the exact same millisecond
   const results = await Promise.all(promises);
 
-  console.log("\nResults from concurrent requests:");
+  console.log("\n--- Results ---");
 
+  let successCount = 0;
+  let blockCount = 0;
   const uniqueSignatures = new Set();
 
-  results.forEach((res, index) => {
-    if (res && res.data && res.data.getRefundSignature) {
-      const sig = res.data.getRefundSignature.signature;
-      console.log(`Request ${index + 1}: ${sig.slice(0, 15)}...${sig.slice(-10)}`);
+  results.forEach(res => {
+    if (res.data.errors) {
+      console.log(`❌ [Req ${res.id}] BLOCKED by setNX: ${res.data.errors[0].message}`);
+      blockCount++;
+    } else if (res.data.data && res.data.data.getClaimSignature) {
+      const sig = res.data.data.getClaimSignature.signature;
+      console.log(`✅ [Req ${res.id}] SUCCESS: Signature returned -> ${sig.slice(0, 15)}...`);
       uniqueSignatures.add(sig);
-    } else {
-      console.log(`Request ${index + 1}: Failed/Error:`, JSON.stringify(res));
+      successCount++;
     }
   });
 
-  console.log(`\nTotal unique signatures generated: ${uniqueSignatures.size}`);
+  console.log("\n--- Summary ---");
+  console.log(`Total Successes: ${successCount}`);
+  console.log(`Total Blocked (Caught by setNX): ${blockCount}`);
+  console.log(`Unique Signatures Generated: ${uniqueSignatures.size}`);
 
-  if (uniqueSignatures.size > 1) {
-    console.log("❌ REPLAY ATTACK SUCCESSFUL! The race condition bypassed the Redis cache.");
-  } else if (uniqueSignatures.size === 1) {
-    console.log("✅ SYSTEM SECURE! Only one signature was generated.");
+  if (uniqueSignatures.size === 1 && blockCount > 0) {
+    console.log("🛡️  SYSTEM SECURE! 1 thread generated the signature. The rest were either blocked by setNX or safely served from the Idempotency Cache.");
+  } else if (uniqueSignatures.size > 1) {
+    console.log("⚠️  VULNERABLE! Multiple UNIQUE signatures were generated simultaneously (TOCTOU failure).");
   } else {
-    console.log("⚠️ No valid signatures were returned. Did you paste a valid Privy Token and Transaction Hash?");
+    console.log("⚠️  Something else went wrong.");
   }
 }
 
-testReplayAttack();
+testSpamAttack();

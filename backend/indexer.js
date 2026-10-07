@@ -686,6 +686,8 @@ function watchEvents() {
           await handleMintCanceled(log);
         } else if (log.eventName === 'RedeemCanceled') {
           await handleRedeemCanceled(log);
+        } else if (log.eventName === 'WhitelistUpdated') {
+          await handleWhitelistUpdated(log);
         }
       }
 

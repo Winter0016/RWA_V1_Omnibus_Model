@@ -468,20 +468,3 @@ const pendingTx = await pool.query(
   [user.id, args.transactionHash] // Parameterized array blocks SQLi
 );
 ```
-
----
-
-## Live Demonstration
-
-Because this project requires a complex environment of API keys (Alpaca, Privy, Pimlico), a local PostgreSQL database, Redis Pub/Sub, and an Arbitrum Sepolia RPC, running it locally is not feasible without extensive environment setup.
-
-Instead, please watch the comprehensive **End-to-End Video Demonstration** showing the architecture in action:
-
-📺 **[Watch the dTesla Architecture Demo Here] (Insert YouTube/Loom Link Here)**
-
-**The video covers:**
-1. Zero-Friction User Onboarding (Privy Email Login)
-2. Gasless ERC-4337 USDC Transactions (Pimlico Paymaster)
-3. Live WebSocket Updates from the Backend
-4. The Two-Step Escrow Mint & Redeem Flow
-5. System-Level Revert and Refund Fallbacks (when the stock market is closed)
